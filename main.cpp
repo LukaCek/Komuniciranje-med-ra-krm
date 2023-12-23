@@ -6,7 +6,7 @@ int dt=300;
 String GripperType = "Digital"; //Servo or Digital
 String msg;
 char msgType;
-bool gripperStartus = 0; //0=Opend, 1=Closed
+bool gripperStartus = 0; //0=Opend, 1=Closed;
 
 
 int extractValue(String msg, char identifier){
@@ -32,23 +32,24 @@ void premikMotorja(int koraki, bool smer, int d){
     }
 }
 
-TaskHandle_t Task1;
+TaskHandle_t Task0;
 void codeForTask0( void * parameter)
 {
-  for(;;){
-    digitalWrite(LedYallow, LOW);
-    delay(dt);
-    digitalWrite(LedYallow, HIGH);
-    delay(dt);
-    //Gripper
-      if(GripperType=="Digital"){
-        if(gripperStartus==1){digitalWrite(GripperPin,HIGH);}
-        else if(gripperStartus==0){digitalWrite(GripperPin,LOW);}
-      } 
-      else if(GripperType=="Servo"){
-        if(gripperStartus==1){digitalWrite(GripperPin,HIGH);}
-        else if(gripperStartus==0){digitalWrite(GripperPin,LOW);}
-      }
+  for (;;) {
+    Serial.println(micros());
+    
+    // Toggle LED
+    digitalWrite(LedYallow, !digitalRead(LedYallow));
+    
+    // Gripper control
+    if (GripperType == "Digital") {
+      digitalWrite(GripperPin, gripperStartus ? HIGH : LOW);
+    } else if (GripperType == "Servo") {
+      // Implement Servo control logic here
+    }
+    
+    // Use vTaskDelay instead of delay to avoid blocking
+    vTaskDelay(dt);
   }
 }
 
@@ -58,14 +59,13 @@ void setup() {
   digitalWrite(LedYallow, LOW);
 
   Serial.begin(115200);
-  Serial.println("Start blinky");
+  Serial.println("Robot started (-=");
 
-  xTaskCreatePinnedToCore(codeForTask0, "Task_0", 1000, NULL, 1, &Task1, 0);
+  xTaskCreatePinnedToCore(codeForTask0, "Task_0", 1000, NULL, 1, &Task0, 0);
 }
 
 void loop() {
   while (Serial.available() == 0) {
-    delay(10);
   }
   msg = Serial.readString();
   msg.trim();
