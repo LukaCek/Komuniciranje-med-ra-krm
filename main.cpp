@@ -1,67 +1,125 @@
-#include <windows.h>
-#include <stdio.h>
-#include <string.h>
+#define LedYallow 13
+#define dirPin 12
+#define stepPin 11
+#define GripperPin 15
+int dt=300;
+String GripperType = "Digital"; //Servo or Digital
+String msg;
+char msgType;
+bool gripperStartus = 0; //0=Opend, 1=Closed
 
-void sendData(const char *portname, const char *message)
-{
-    HANDLE hSerial;
-    DCB dcbSerialParams = {0};
-    COMMTIMEOUTS timeouts = {0};
 
-    hSerial = CreateFile(portname, GENERIC_READ | GENERIC_WRITE, 0, 0, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, 0);
+int extractValue(String msg, char identifier){
+  // Poišči pozicijo identifikatorja v sporočilu
+  int index = msg.indexOf(identifier);
 
-    if (hSerial == INVALID_HANDLE_VALUE)
-    {
-        fprintf(stderr, "Napaka pri odpiranju COM porta. Preverite, če je pravilno nastavljen.\n");
-        return;
+  // Izloči vrednost po identifikatorju
+  String valueStr = msg.substring(index + 1, msg.indexOf(" ", index));
+  
+  // Pretvori niz v celo število
+  return valueStr.toInt();
+}
+void premikMotorja(int koraki, bool smer, int d){
+    d=d*2;
+    int i=0;
+    bool state=1;
+    while(i!=koraki){
+    i++;
+    digitalWrite(stepPin,HIGH);
+    delayMicroseconds(d);
+    digitalWrite(stepPin,LOW);
+    delayMicroseconds(d);
     }
-
-    dcbSerialParams.DCBlength = sizeof(dcbSerialParams);
-    if (!GetCommState(hSerial, &dcbSerialParams))
-    {
-        fprintf(stderr, "Napaka pri pridobivanju stanja COM porta.\n");
-        CloseHandle(hSerial);
-        return;
-    }
-
-    dcbSerialParams.BaudRate = CBR_115200;
-    dcbSerialParams.ByteSize = 8;
-    dcbSerialParams.StopBits = ONESTOPBIT;
-    dcbSerialParams.Parity = NOPARITY;
-
-    if (!SetCommState(hSerial, &dcbSerialParams))
-    {
-        fprintf(stderr, "Napaka pri nastavljanju stanja COM porta.\n");
-        CloseHandle(hSerial);
-        return;
-    }
-
-    timeouts.ReadIntervalTimeout = 50;
-    timeouts.ReadTotalTimeoutConstant = 50;
-    timeouts.ReadTotalTimeoutMultiplier = 10;
-    timeouts.WriteTotalTimeoutConstant = 50;
-    timeouts.WriteTotalTimeoutMultiplier = 10;
-
-    if (!SetCommTimeouts(hSerial, &timeouts))
-    {
-        fprintf(stderr, "Napaka pri nastavljanju timeout-ov COM porta.\n");
-        CloseHandle(hSerial);
-        return;
-    }
-
-    DWORD bytes_written;
-    if (!WriteFile(hSerial, message, strlen(message), &bytes_written, NULL))
-    {
-        fprintf(stderr, "Napaka pri pisanju v COM port.\n");
-        CloseHandle(hSerial);
-        return;
-    }
-
-    CloseHandle(hSerial);
 }
 
-int main()
+TaskHandle_t Task1;
+void codeForTask0( void * parameter)
 {
-    sendData("COM5", "Test.");
-    return 0;
+  for(;;){
+    digitalWrite(LedYallow, LOW);
+    delay(dt);
+    digitalWrite(LedYallow, HIGH);
+    delay(dt);
+    //Gripper
+      if(GripperType=="Digital"){
+        if(gripperStartus==1){digitalWrite(GripperPin,HIGH);}
+        else if(gripperStartus==0){digitalWrite(GripperPin,LOW);}
+      } 
+      else if(GripperType=="Servo"){
+        if(gripperStartus==1){digitalWrite(GripperPin,HIGH);}
+        else if(gripperStartus==0){digitalWrite(GripperPin,LOW);}
+      }
+  }
+}
+
+void setup() {
+  pinMode(GripperPin, OUTPUT);
+  pinMode(LedYallow, OUTPUT);
+  digitalWrite(LedYallow, LOW);
+
+  Serial.begin(115200);
+  Serial.println("Start blinky");
+
+  xTaskCreatePinnedToCore(codeForTask0, "Task_0", 1000, NULL, 1, &Task1, 0);
+}
+
+void loop() {
+  while (Serial.available() == 0) {
+    delay(10);
+  }
+  msg = Serial.readString();
+  msg.trim();
+
+  //preverino vrsto sporočila
+  msgType = msg[0];
+
+  if (msgType == 'M'){
+    Serial.println("To je Move.");
+
+    // Preveri, ali sporočilo ustreza formatu "Xn Ym"
+    if (msg.indexOf("X") != -1 && msg.indexOf("Y") != -1){
+    // Izloči vrednosti X in Y iz sporočila
+    int pozX = extractValue(msg, 'X');
+    int pozY = extractValue(msg, 'Y');
+
+    // Uporabi ali shranjuj podatke po potrebi
+    // Primer: Izpiši vrednosti na serijski vmesnik
+    Serial.print("Pozicija X: ");
+    Serial.println(pozX);
+    Serial.print("Pozicija Y: ");
+    Serial.println(pozY);
+    } else {
+      // Sporočilo ni v pravilnem formatu
+      Serial.println("Napaka: Prišel si v M ampak tukaj ni M ali pa je nekaj narobe.");
+    }
+    
+  }
+  else if (msgType == 'S'){
+    Serial.println("To so premik v stopinjah.");
+    premikMotorja(200,1,600);
+  }
+  else if (msgType == 'D'){
+    Serial.println("Komanda za dt (delay time)");
+
+    // Izloči vrednosti X in Y iz sporočila
+    dt = extractValue(msg, 'D');
+    // Primer: Izpiši vrednosti na serijski vmesnik
+    Serial.print("DT: ");
+    Serial.println(dt);
+    
+  }
+  else if (msgType == 'G'){
+    Serial.print("Gripper: ");
+    //preverimo če gripper odpremo "G O" ali zapremo "G C"
+    if (msg[2] == 'O'){
+      Serial.println("Opening");
+      gripperStartus = 0;
+    } else if (msg[2] == 'C') {
+      Serial.println("Cloasing");
+      gripperStartus = 1;
+    } else {Serial.println("ERROR");}
+
+  }
+  else {Serial.println("Ta vrsta sporočila ni znana.");}
+  msg = "";
 }
